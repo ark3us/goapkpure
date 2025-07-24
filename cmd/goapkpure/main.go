@@ -1,119 +1,38 @@
 package main
 
 import (
-    "encoding/json"
-    "flag"
-    "fmt"
-    "github.com/adamyordan/goapkpure"
-    "log"
-    "strings"
+	"flag"
+	"fmt"
+	"github.com/ark3us/goapkpure"
+	"log"
 )
 
-func printJson(obj interface{}) {
-    prettyJSON, err := json.MarshalIndent(obj, "", "    ")
-    if err != nil {
-        log.Fatal("Failed to generate json", err)
-    }
-    fmt.Printf("%s\n", string(prettyJSON))
-}
-
-func printVersions(packageName string, inJson bool) {
-    verItems, err := goapkpure.GetVersions(packageName)
-    if err != nil {
-        log.Fatalln(err)
-    }
-    if inJson {
-        printJson(verItems)
-    } else {
-        for i, verItem := range verItems {
-            tags := strings.Join(verItem.Tags, ",")
-            arch := strings.Join(verItem.Architectures, ",")
-            fmt.Printf("%3d | version=%-16s | updateOn=%s | tags=%-10s | size=%-8s | arch=%-16s | downloadUrl=%s\n",
-                i, verItem.Version, verItem.UpdateOn, tags, verItem.Size, arch, verItem.DownloadUrl)
-        }
-    }
-}
-
-func getVersionIndex(verItems []goapkpure.VerItem, versionId int, versionName string) (int, error){
-    verIndex := versionId
-    if versionName != "" {
-        found := false
-        for i, verItem := range verItems {
-            if verItem.Version == versionName {
-                verIndex = i
-                found = true
-                break
-            }
-        }
-        if !found {
-            return 0, fmt.Errorf("unable to find specified version name")
-        }
-    }
-    if versionId > len(verItems) {
-        return 0, fmt.Errorf("version id exceeds version length")
-    }
-    return verIndex, nil
-}
-
 func main() {
-    packagePtr := flag.String("package", "", "Package name")
-    versionsPtr := flag.Bool("versions", false, "List all available versions")
-    versionPtr := flag.Int("version", 0, "Select a version by index")
-    versionNamePtr := flag.String("versionName", "", "Select a version by version name. " +
-        "Get the first one if duplicate. if set, -version flag is ignored.")
-    downloadPtr := flag.Bool("download", false, "Download APK from selected version. " +
-        "By default download latest version. Use -version or -versionName to specify version")
-    outputPtr := flag.String("output", "", "Download file output. (default: <packagename>.apk)")
-    jsonPtr := flag.Bool("json", false, "Print information in JSON format.")
+	packagePtr := flag.String("package", "", "Package name")
+	flag.Parse()
+	if *packagePtr == "" {
+		log.Fatalln("Please specify package name with -package flag")
+	}
 
-    flag.Parse()
+	verItems, _ := goapkpure.GetVersions(*packagePtr)
+	if len(verItems) == 0 {
+		return
+	}
+	fmt.Printf("Versions for package %s:\n", *packagePtr)
+	for i, verItem := range verItems {
+		fmt.Printf("%3d | title=%s | version=%-16s | updateOn=%s | size=%-8s \n | url=%s \n | downloadUrl=%s\n",
+			i, verItem.Title, verItem.Version, verItem.UpdateOn, verItem.Size, verItem.Url, verItem.DownloadUrl)
+	}
 
-    if *packagePtr == "" {
-        log.Fatalln("Please specify package name with -package flag")
-    }
+	variants, _ := verItems[0].GetVariants()
+	if len(variants) == 0 {
+		log.Println("No variants found for the latest version")
+		return
+	}
 
-    if *versionsPtr {
-        printVersions(*packagePtr, *jsonPtr)
-    } else if *jsonPtr {
-        verItems, err := goapkpure.GetVersions(*packagePtr)
-        if err != nil {
-            log.Fatalln(err)
-        }
-        versionIndex, err := getVersionIndex(verItems, *versionPtr, *versionNamePtr)
-        if err != nil {
-            log.Fatalln(err)
-        }
-        printJson(verItems[versionIndex])
-    } else {
-        var dlLink string
-        var err error
-        if *versionPtr >= 0 {
-            verItems, err := goapkpure.GetVersions(*packagePtr)
-            if err != nil {
-                log.Fatalln(err)
-            }
-            versionIndex, err := getVersionIndex(verItems, *versionPtr, *versionNamePtr)
-            if err != nil {
-                log.Fatalln(err)
-            }
-            dlLink, err = goapkpure.GetDownloadDirectLink(verItems[versionIndex].DownloadUrl)
-            if err != nil {
-                log.Fatalln(err)
-            }
-        } else {
-            dlLink, err = goapkpure.GetLatestDownloadLink(*packagePtr)
-            if err != nil {
-                log.Fatalln(err)
-            }
-        }
-        if !*downloadPtr {
-            fmt.Println(dlLink)
-        } else {
-            outputFile := *outputPtr
-            if outputFile == "" {
-                outputFile = *packagePtr + ".apk"
-            }
-            goapkpure.DownloadFile(dlLink, outputFile)
-        }
-    }
+	fmt.Printf("Variants for latest version %s:\n", verItems[0].Version)
+	for i, variant := range variants {
+		fmt.Printf("%3d | versionCode=%-16d | arch=%-10s | sdk=%-16s | signature=%s | sha1=%s \n | downloadUrl=%s\n",
+			i, variant.VersionCode, variant.Architecture, variant.AndroidVer, variant.Signature, variant.Sha1, variant.DownloadUrl)
+	}
 }
